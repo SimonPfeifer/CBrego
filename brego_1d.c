@@ -79,8 +79,6 @@ void update(struct Cell *cell, float time_step) {
     float velocity = state_solved[1];
     float pressure = state_solved[4];
 
-    // printf("Solved state: %f, %f, %f\n", density, velocity, pressure);
-
     // Convert the primitive quantities of the solved state 
     // into fluxes of the conserved qunatities
     float flux_mass = density * velocity;
@@ -88,14 +86,9 @@ void update(struct Cell *cell, float time_step) {
     float flux_energy = (pressure * GAMMA / (GAMMA - 1) + 
                                     0.5f * density * velocity * velocity) * velocity;
 
-    // printf("Fluxes: %f, %f, %f\n", flux_mass, flux_momentum, flux_energy);
-
-    printf("Before: %f, %f\n", cell_ngb_left->mass, flux_mass);
-    printf("Interm: %f, %f\n", cell_ngb_left->mass, cell_ngb_left->surface_area);
     cell_ngb_left->mass -= flux_mass * cell_ngb_left->surface_area * time_step;
     cell_ngb_left->momentum -= flux_momentum * cell_ngb_left->surface_area * time_step;
     cell_ngb_left->energy -= flux_energy * cell_ngb_left->surface_area * time_step;
-    printf("After: %f, %f\n", cell_ngb_left->mass, flux_mass);
 
     cell->mass += flux_mass * cell->surface_area * time_step;
     cell->momentum += flux_momentum * cell->surface_area * time_step;
@@ -156,17 +149,10 @@ int main(){
         for (int i = 0; i < N_CELLS; i++) {
               update(&cells[i], time_step);
         }
-
         n_iter++;
         time_current += time_step;
-        printf("Numer of iterations: %d\n", n_iter);
-        printf("Current time: %f\n", time_current);
-        
-        write_to_file(cells, "a");
-    }
 
-    for (int i = 0; i < N_CELLS; i++) {
-        printf("%f\n", cells[i].density);
+        write_to_file(cells, "a");
     }
 }
 
