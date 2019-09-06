@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 
 #include "riemann/riemann_exact.h"
 
@@ -7,6 +8,9 @@
 #define TIME_END 0.2f
 
 #define BOUNDARY_TYPE 0 // periodic=0, reflective=1
+
+#define TIMESTEP_LIMITER 0.2f
+#define TIMESTEP_MAX 0.1f
 
 #define GAMMA 5.f / 3.f
 
@@ -44,6 +48,16 @@ void conserved_to_primitive(struct Cell *cell) {
     cell->pressure = (GAMMA - 1) * 
                                 (cell->energy / cell->volume - 
                                  0.5f * cell->density * cell->velocity * cell->velocity);
+}
+
+float caculate_timestep(struct Cell cell) {
+    float dt;
+    if  (fabs(cell.velocity) > 0) {
+        dt = cell.volume / fabs(cell.velocity) * TIMESTEP_LIMITER;
+    } else {
+        dt = TIMESTEP_MAX;
+    }
+    return(dt);
 }
 
 void update(struct Cell *cell, float time_step) {
@@ -114,6 +128,8 @@ void write_to_file(struct Cell *cells, char mode[1]) {
 }
 
 int main(){
+    clock_t t_clock;
+    t_clock = clock();
     // Generate structure in which we store our cells
     struct Cell *cells = malloc(N_CELLS * sizeof(struct Cell));
     
@@ -138,6 +154,7 @@ int main(){
     write_to_file(cells, "w");
 
     int n_iter = 0;
+    float time_step_tmp;
     float time_step = 0.001f;
     float time_current = 0.f;
     // Main time integration loop
@@ -145,14 +162,24 @@ int main(){
         for (int i = 0; i < N_CELLS; i++) {
             check_conserved(cells[i]);
             conserved_to_primitive(&cells[i]);
+            time_step_tmp = caculate_timestep(cells[i]);
+            if (time_step_tmp < time_step) {
+                time_step = time_step_tmp;
+            }
         }
         for (int i = 0; i < N_CELLS; i++) {
               update(&cells[i], time_step);
         }
         n_iter++;
         time_current += time_step;
+        time_step = TIMESTEP_MAX;
 
         write_to_file(cells, "a");
     }
+    t_clock = clock() - t_clock;
+    printf("%s\n", "DONE");
+    printf("Final time: %.2f\n", time_current);
+    printf("Run time: %.2fs\n", (double)t_clock / CLOCKS_PER_SEC);
+    printf("Time steps: %d\n", n_iter);
 }
 
