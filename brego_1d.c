@@ -25,8 +25,7 @@ struct Cell {
     float volume;
     float surface_area;
 
-    float boundary_x;
-    float boundary_type;
+    int boundary_x;
 
     struct Cell *ngb_left;
 };
@@ -63,12 +62,20 @@ float caculate_timestep(struct Cell cell) {
 void update(struct Cell *cell, float time_step) {
     // Initialise the data arrays for the left and right states
     float state_left[5];
-    struct Cell *cell_ngb_left = cell->ngb_left;
-    state_left[0] = cell_ngb_left->density;
-    state_left[1] = cell_ngb_left->velocity; // velocity_x
-    state_left[2] = 0.f; // velocity_y
-    state_left[3] = 0.f; // velocity_z
-    state_left[4] = cell_ngb_left->pressure;
+    if ((BOUNDARY_TYPE == 1) && (cell->boundary_x == 1)) {
+        state_left[0] = cell->density;
+        state_left[1] = -1.f * cell->velocity; // velocity_x
+        state_left[2] = 0.f; // velocity_y
+        state_left[3] = 0.f; // velocity_z
+        state_left[4] = cell->pressure;
+    } else {
+        struct Cell *cell_ngb_left = cell->ngb_left;
+        state_left[0] = cell_ngb_left->density;
+        state_left[1] = cell_ngb_left->velocity; // velocity_x
+        state_left[2] = 0.f; // velocity_y
+        state_left[3] = 0.f; // velocity_z
+        state_left[4] = cell_ngb_left->pressure;
+    }
 
     float state_right[5];
     state_right[0] = cell->density;
@@ -100,17 +107,54 @@ void update(struct Cell *cell, float time_step) {
     float flux_energy = (pressure * GAMMA / (GAMMA - 1) + 
                                     0.5f * density * velocity * velocity) * velocity;
 
-    cell_ngb_left->mass -= flux_mass * cell_ngb_left->surface_area * time_step;
-    cell_ngb_left->momentum -= flux_momentum * cell_ngb_left->surface_area * time_step;
-    cell_ngb_left->energy -= flux_energy * cell_ngb_left->surface_area * time_step;
+    if ((BOUNDARY_TYPE != 1) || (cell->boundary_x != 1)){
+        struct Cell *cell_ngb_left = cell->ngb_left;
+        cell_ngb_left->mass -= flux_mass * cell_ngb_left->surface_area * time_step;
+        cell_ngb_left->momentum -= flux_momentum * cell_ngb_left->surface_area * time_step;
+        cell_ngb_left->energy -= flux_energy * cell_ngb_left->surface_area * time_step;
+    }
 
     cell->mass += flux_mass * cell->surface_area * time_step;
     cell->momentum += flux_momentum * cell->surface_area * time_step;
     cell->energy += flux_energy * cell->surface_area * time_step;
+
+    if (BOUNDARY_TYPE == 1){
+        if (cell->boundary_x == 2){
+            state_left[0] = cell->density;
+            state_left[1] = cell->velocity; // velocity_x
+            state_left[2] = 0.f; // velocity_y
+            state_left[3] = 0.f; // velocity_z
+            state_left[4] = cell->pressure;
+        
+            state_right[0] = cell->density;
+            state_right[1] = -cell->velocity; // velocity_x
+            state_right[2] = 0.f; // velocity_y
+            state_right[3] = 0.f; // velocity_z
+            state_right[4] = cell->pressure;
+
+            riemann_solver_solve(&state_left[0], &state_right[0], &state_solved[0],
+                                            &n_unit[0]);
+
+            float density = state_solved[0];
+            float velocity = state_solved[1];
+            float pressure = state_solved[4];
+
+            // Convert the primitive quantities of the solved state 
+            // into fluxes of the conserved qunatities
+            float flux_mass = density * velocity;
+            float flux_momentum = density * velocity * velocity + pressure;
+            float flux_energy = (pressure * GAMMA / (GAMMA - 1) + 
+                                            0.5f * density * velocity * velocity) * velocity;
+            
+            cell->mass -= flux_mass * cell->surface_area * time_step;
+            cell->momentum -= flux_momentum * cell->surface_area * time_step;
+            cell->energy -= flux_energy * cell->surface_area * time_step;
+        }
+    }
 }
 
 void write_to_file(struct Cell *cells, char mode[1]) {
-    FILE *fp = fopen("output.txt", mode);
+    FILE *fp = fopen("output_density.txt", mode);
     if (fp == NULL){
         exit(1);
     }
@@ -146,11 +190,25 @@ int main(){
             cells[i].energy = 0.1f / (GAMMA - 1) / N_CELLS;
         }
 
+        // Assign left neighbour
         if (i > 0) {
             cells[i].ngb_left = &cells[i - 1];
         }
+
+        // Set boundary conditions
+        if (BOUNDARY_TYPE == 1) {
+            if (i == 0) {
+                cells[i].boundary_x = 1; // left reflective
+            } else if (i == N_CELLS - 1) {
+                cells[i].boundary_x = 2; // right reflective
+            }
+        }
     }
-    cells[0].ngb_left = &cells[N_CELLS - 1];
+    if (BOUNDARY_TYPE == 0) {
+        cells[0].ngb_left = &cells[N_CELLS - 1];
+    }
+
+    // Initilise the outout file with initial conditions
     write_to_file(cells, "w");
 
     int n_iter = 0;
